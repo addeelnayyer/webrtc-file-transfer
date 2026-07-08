@@ -1,94 +1,47 @@
+# CROSSWIRE
 
-# Peer-to-peer communication
+Direct peer-to-peer file transfer over WebRTC data channels — no upload server, no size cap, no account. Files stream straight from one browser to the other. The only thing that touches a server is a short-lived TURN credential for peers stuck behind NAT.
 
-Hey there amazing people! This repository holds all the most authentic way, for transferring files (images, video, pdf, etc) over WebRTC datachannels.
+## How it works
 
-## Previous knowledge
+- **Transport:** WebRTC `RTCDataChannel`. Bytes go peer-to-peer; nothing is stored anywhere.
+- **Signaling:** manual — you copy the connection blob between the two browsers yourself (WhatsApp, Slack, email, whatever). No signaling server.
+- **NAT traversal:** Cloudflare TURN. Credentials are minted on demand by a Pages Function (`functions/turn.js`) so the secret never reaches the browser.
+- **Backpressure:** sends pause on `bufferedAmountLow` so large files don't blow up the data channel buffer.
 
-From the last few months I have been working with WebRTC live streams & one-to-one chat's. But as soon as it comes to file transfer, the system used to crash.
-
-### Reasons for system crash:
-- dataChhannel.BufferedAmount() get's full.
-
-### Solution:
-
-- We need to implement a callback listener to listen when the dataChannel bufferedAmount decreases below 16Kib
+## Run locally
 
 ```bash
-if (dataChannel.bufferedAmount > dataChannel.bufferedAmountLowThreshold) {
-    dataChannel.onbufferedamountlow = () => {
-        dataChannel.onbufferedamountlow = null;
-        send();
-    };
-    return;
-}
+npm install
+npm start        # npx serve public → http://localhost:3000
 ```
 
-## Run Locally
+It's a static site — `public/index.html` is the whole app. TURN won't work locally without the Pages Function env vars (see below), but same-network transfers over STUN will.
 
-Clone the project
+## Connecting two peers
+
+Both sides open the app. Then:
+
+1. **Tab A:** hit **Create offer**, copy Station A's box.
+2. **Tab B:** paste it into Station B, hit **Connect**.
+3. **Tab B:** copy the reply from its Station A box.
+4. **Tab A:** paste the reply into Station B, hit **Connect**.
+
+Status flips to connected. Now either side can pick a file and send it — transfer is bi-directional.
+
+## Deploy
+
+Hosted on Cloudflare Pages (project `crosswire360`):
 
 ```bash
-  git clone https://link-to-project
+npm run deploy
 ```
 
-Go to the project directory
+For TURN, set these env vars on the Pages project (Cloudflare dashboard → **Realtime → TURN** to create the key):
 
-```bash
-  cd my-project
-```
+- `TURN_KEY_ID`
+- `TURN_KEY_TOKEN`
 
-Install dependencies
+## License
 
-```bash
-  npm install
-```
-
-Start the server
-
-```bash
-  npm start 
-```
-
-The defauly `port` for the express server is `3000`. Visit http://localhost:3000 to view it on browser.
-
-
-## Establishing Connection
-
-To establish connection between two peer's whether on same network or on different networks, follow the steps mentioned below:
-
-`Suppose:` 👨‍🎓 This is George `&` 🙋‍♀️ This is Anna. Let George intiate the connection with Anna, later they can transfer files to each other.
-
-- `George: ` Open http://localhost:3000 after executing `npm start` in his machine.
--  `Anna: ` Open http://localhost:3000 after executing `npm start` in her machine.
-- `George: ` Click on `Create Local Offer` and copy the text i'e automatically generated. Now pass this text to Anna via `WhatsApp` or `Telegram` (Note: `WhatsApp`/`Telegram` are behaving as our signaling server as of now.)
-- `Anna: ` Copy the text passed by george and past it inside `Remote Offer` text box, then click on `Connect`. Now you are gonna see some text automatically generated inside your `Local Offer` text box. Copy that & pass it to George.
-- `George: ` Copy the text passed by Anna and paste it under your `Remote Offer` text box, and click on `Connect`.
-
-If the connecton above was successfull, the the status text above will change to `Connected to peer`.
-
-`Note:` In future we will use WebSockets which will work as signalling server and we will get rid of all this text passing heck.
-
-## Sending files
-
-File transfer with WebRTC can be bi-directional. To send files to your peer:
-- Click on choose file button, choose the file you want to send, and boom the file has been sent to your peer.
-- Transfer speed will depend on both of your bandwidths.
-- If you are behind a `NAT` then transfer speeds can really decrease, becasue `TURN` servers used in this project are not the best.
-
-## Protocols
-- SDP (Session Description Protocol)
-
-## Alternatives
-- Building an SFU and transfer files over it.
-- Check [EasyFi Db](https://github.com/priyangsubanerjee/easyfi-db) for more information.
-## Authors
-
-- 👔 [@priyangsubanerjee](https://www.github.com/priyangsubanerjee)
-
-
-## Features
-
-- 🔑 No API key is required to upload a file.
-- 💰 Uploads are completely free as of now.
-- 📱 Send large files easily.
+See [LICENCE.md](LICENCE.md).
