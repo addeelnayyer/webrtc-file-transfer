@@ -844,38 +844,45 @@
           : "off";
       };
 
-      let localPeer = new RTCPeerConnection({
-        iceServers: [
-          { urls: "stun:freestun.net:3479" },
-          {
-            urls: "turn:freestun.net:3479",
-            username: "free",
-            credential: "free",
-          },
-        ],
-      });
-
+      let localPeer;
       let dataChannel;
       let receiveBuffer = [];
       let receivedSize = 0;
 
       let receivedFile = {};
 
-      // ponytail: write the full local blob ONCE, when ICE gathering finishes,
-      // instead of restringifying on every candidate (which let users copy a
-      // half-gathered, unusable offer).
-      // ponytail: don't wait for full "complete" — a slow/flaky TURN server can
-      // stall gathering 10-40s. Publish the blob once, 1s after candidates stop
-      // trickling in; that's enough to connect. Timeout: bump if you rely on TURN.
-      let gatherTimer;
-      localPeer.addEventListener("icecandidate", () => {
-        clearTimeout(gatherTimer);
-        gatherTimer = setTimeout(() => {
-          localConfigText.value = JSON.stringify(localPeer.localDescription);
-          refreshCopyChip();
-          setStatus("Ready — copy the box below.");
-        }, 1000);
-      });
+      // Build the peer lazily so we can fetch short-lived Cloudflare TURN
+      // credentials first. Cross-network connections need a real relay; the
+      // /turn Pages Function mints them (STUN-only fallback if it's down).
+      let published = false;
+      function publishLocal() {
+        if (published || !localPeer.localDescription) return;
+        published = true;
+        localConfigText.value = JSON.stringify(localPeer.localDescription);
+        refreshCopyChip();
+        setStatus("Ready — copy the box below.");
+      }
+
+      let peerReady;
+      function ensurePeer() {
+        if (peerReady) return peerReady;
+        peerReady = (async () => {
+          let iceServers = [{ urls: "stun:stun.cloudflare.com:3478" }];
+          try {
+            const r = await fetch("/turn");
+            // Cloudflare returns iceServers as a single object; wrap it in an array.
+            if (r.ok) iceServers = [(await r.json()).iceServers];
+          } catch {
+            // ponytail: /turn down → STUN-only. Works same-network, not across NAT.
+          }
+          localPeer = new RTCPeerConnection({ iceServers });
+          localPeer.addEventListener("icegatheringstatechange", () => {
+            if (localPeer.iceGatheringState === "complete") publishLocal();
+          });
+          localPeer.ondatachannel = (e) => setupDataChannel(e.channel);
+        })();
+        return peerReady;
+      }
 
       function setupDataChannel(channel) {
         dataChannel = channel;
@@ -885,16 +892,16 @@
         dataChannel.onopen = () => setStatus("Connected to peer.");
       }
 
-      localPeer.ondatachannel = (e) => setupDataChannel(e.channel);
-
       localConnectBtn.addEventListener("click", async function () {
-        setupDataChannel(localPeer.createDataChannel("dataChannel"));
         setStatus("Gathering connection info…");
+        await ensurePeer();
+        setupDataChannel(localPeer.createDataChannel("dataChannel"));
         const offer = await localPeer.createOffer();
         await localPeer.setLocalDescription(offer);
       });
 
       remoteConnectBtn.addEventListener("click", async function () {
+        await ensurePeer();
         await localPeer.setRemoteDescription(JSON.parse(remoteConfigText.value));
         if (localPeer.localDescription) {
           // We made the offer; the pasted blob is the answer. Done.
