@@ -758,11 +758,16 @@
       // ponytail: write the full local blob ONCE, when ICE gathering finishes,
       // instead of restringifying on every candidate (which let users copy a
       // half-gathered, unusable offer).
-      localPeer.addEventListener("icegatheringstatechange", () => {
-        if (localPeer.iceGatheringState === "complete") {
+      // ponytail: don't wait for full "complete" — a slow/flaky TURN server can
+      // stall gathering 10-40s. Publish the blob once, 1s after candidates stop
+      // trickling in; that's enough to connect. Timeout: bump if you rely on TURN.
+      let gatherTimer;
+      localPeer.addEventListener("icecandidate", () => {
+        clearTimeout(gatherTimer);
+        gatherTimer = setTimeout(() => {
           localConfigText.value = JSON.stringify(localPeer.localDescription);
           setStatus("Ready — copy the box below.");
-        }
+        }, 1000);
       });
 
       function setupDataChannel(channel) {
