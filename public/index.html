@@ -68,8 +68,7 @@
     <br />
 
     <div>
-      <input type="file" id="file-upload" />
-      <button hidden id="sendFile">Send file</button><br />
+      <input type="file" id="file-upload" /><br />
       <progress id="progress" value="0"></progress>&nbsp;&nbsp;<label
         id="progressLabel"
       ></label>
@@ -79,20 +78,20 @@
     <hr />
     <br />
 
-    <small id="progress"></small>
     <a href="" id="downloadanchor"></a>
-    <button hidden id="createBlob">Create blob</button>
 
     <script>
       var remoteConnectBtn = document.getElementById("connectRemoteConfig");
       var localConnectBtn = document.getElementById("connectLocalConfig");
       var remoteConfigText = document.getElementById("remoteConfigText");
+      var localConfigText = document.getElementById("localConfigText");
       var fileUpload = document.getElementById("file-upload");
-      var sendFileBtn = document.getElementById("sendFile");
       var downloadAnchor = document.getElementById("downloadanchor");
-      var createBlobBtn = document.getElementById("createBlob");
       var progressbar = document.getElementById("progress");
       var progressLabel = document.getElementById("progressLabel");
+      var statusEl = document.getElementById("connectionStatus");
+
+      const setStatus = (text) => (statusEl.textContent = text);
 
       let localPeer = new RTCPeerConnection({
         iceServers: [
@@ -111,38 +110,44 @@
 
       let receivedFile = {};
 
-      localConnectBtn.addEventListener("click", async function () {
-        dataChannel = localPeer.createDataChannel("dataChannel");
+      // ponytail: write the full local blob ONCE, when ICE gathering finishes,
+      // instead of restringifying on every candidate (which let users copy a
+      // half-gathered, unusable offer).
+      localPeer.addEventListener("icegatheringstatechange", () => {
+        if (localPeer.iceGatheringState === "complete") {
+          localConfigText.value = JSON.stringify(localPeer.localDescription);
+          setStatus("Ready — copy the box below.");
+        }
+      });
+
+      function setupDataChannel(channel) {
+        dataChannel = channel;
         dataChannel.binaryType = "arraybuffer";
-        dataChannel.onmessage = (msg) => onReceiveMessageCallback(msg);
         dataChannel.bufferedAmountLowThreshold = 0;
-        dataChannel.onopen = () =>
-          (document.getElementById("connectionStatus").innerHTML =
-            "Connected to peer.");
+        dataChannel.onmessage = (msg) => onReceiveMessageCallback(msg);
+        dataChannel.onopen = () => setStatus("Connected to peer.");
+      }
 
-        localPeer.onicecandidate = (o) =>
-          (document.querySelector("#localConfigText").value = JSON.stringify(
-            localPeer.localDescription
-          ));
+      localPeer.ondatachannel = (e) => setupDataChannel(e.channel);
 
-        const localOffer = await localPeer.createOffer();
-        localPeer.setLocalDescription(new RTCSessionDescription(localOffer));
+      localConnectBtn.addEventListener("click", async function () {
+        setupDataChannel(localPeer.createDataChannel("dataChannel"));
+        setStatus("Gathering connection info…");
+        const offer = await localPeer.createOffer();
+        await localPeer.setLocalDescription(offer);
       });
 
       remoteConnectBtn.addEventListener("click", async function () {
-        localPeer.setRemoteDescription(JSON.parse(remoteConfigText.value));
-        localPeer.localDescription == null
-          ? localPeer
-              .createAnswer()
-              .then((answer) => localPeer.setLocalDescription(answer))
-          : null;
-        localPeer.onicecandidate = (o) =>
-          (document.querySelector("#localConfigText").value = JSON.stringify(
-            localPeer.localDescription
-          ));
+        await localPeer.setRemoteDescription(JSON.parse(remoteConfigText.value));
+        if (localPeer.localDescription) {
+          // We made the offer; the pasted blob is the answer. Done.
+          return;
+        }
+        // We're answering an incoming offer.
+        setStatus("Gathering connection info…");
+        const answer = await localPeer.createAnswer();
+        await localPeer.setLocalDescription(answer);
       });
-
-      sendFileBtn.addEventListener("click", function () {});
 
       fileUpload.addEventListener("change", function () {
         const file = fileUpload.files[0];
@@ -160,16 +165,6 @@
 
         sendData();
       });
-
-      localPeer.ondatachannel = (e) => {
-        dataChannel = e.channel;
-        dataChannel.binaryType = "arraybuffer";
-        dataChannel.bufferedAmountLowThreshold = 0;
-        dataChannel.onmessage = (msg) => onReceiveMessageCallback(msg);
-        dataChannel.onopen = () =>
-          (document.getElementById("connectionStatus").innerHTML =
-            "Connected to peer.");
-      };
 
       function sendData() {
         let file = fileUpload.files[0];
