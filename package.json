@@ -4,6 +4,7 @@
   "description": "P2P file transfer over WebRTC (static site)",
   "license": "ISC",
   "scripts": {
+    "start": "npx serve public",
     "deploy": "npx wrangler pages deploy public --project-name webrtc-file-transfer"
   }
 }
