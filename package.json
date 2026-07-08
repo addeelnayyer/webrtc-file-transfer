@@ -1,0 +1,9 @@
+{
+  "name": "webrtc-file-transfer",
+  "version": "1.0.0",
+  "description": "P2P file transfer over WebRTC (static site)",
+  "license": "ISC",
+  "scripts": {
+    "deploy": "wrangler pages deploy public --project-name webrtc-file-transfer"
+  }
+}
